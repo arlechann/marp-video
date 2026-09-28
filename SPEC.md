@@ -27,10 +27,10 @@ script.md
   - 本文はMarkdown形式で記述する
   - VOICEVOXへ入力する音声内容と読み上げ設定のソースとなる
 
-出力はMP4動画ファイルとする。既定の出力先は `build/video.mp4` とする。
+出力はMP4動画ファイルとする。既定の出力先は `slides.md` と同じディレクトリにある `build/` とし、ファイル名にはビルド時刻を付ける。
 
 ```text
-build/video.mp4
+build/video-20260929T123456789.mp4
 ```
 
 ---
@@ -63,7 +63,7 @@ VOICEVOX
                  ↓
                FFmpeg
                  ↓
-              video.mp4
+              video-<timestamp>.mp4
 ```
 
 ---
@@ -97,6 +97,8 @@ slides.md
 ### 4.3 動画用画像の生成
 
 Marp CLIの `--images png` を使用して、各ページを個別のPNG画像として出力する。標準のスライドサイズは16:9、1280×720ピクセルとする。
+
+スライド内の相対パスで指定した画像などの素材は、`slides.md` のあるディレクトリを基準に解決する。Marp CLIがブラウザー経由でローカルファイルを読む場合は、`--allow-local-files` を明示したビルドでのみMarp CLIにも同じオプションを渡す。ローカル素材がブロックされた警告を検出した場合は、画像が欠けた動画を作らずビルドエラーとする。
 
 想定される出力例：
 
@@ -300,6 +302,16 @@ VOICEVOX向けの発音辞書や自動文字列置換機能は、本ツールの
 
 ページごとに有効な `speaker` を使ってVOICEVOXから音声合成用クエリを取得し、`script.md` のFront Matterで指定された設定値だけをそのクエリに反映してから音声を生成する。未指定の値はVOICEVOXが返した値を維持する。
 
+### 8.5 エンジンの起動と接続
+
+本ツールはVOICEVOX ENGINEを自動起動しない。利用者があらかじめ起動し、ビルド開始時に `--voicevox-url` の接続先と `/speakers` を確認する。接続できない場合や必要なスタイルIDが見つからない場合は、スライド画像と音声の生成を始める前にエラーとする。
+
+起動補助として `scripts/start-voicevox.sh` を付属する。DockerまたはPodmanを使い、公式のCPU用イメージ `voicevox/voicevox_engine:cpu-latest` を起動して `127.0.0.1:50021` に公開する。引数なしではDockerを優先し、Dockerが見つからなければPodmanを使う。`docker` または `podman` を引数で明示できる。実行はフォアグラウンドとし、終了時にコンテナを削除する。
+
+```text
+./scripts/start-voicevox.sh [docker|podman]
+```
+
 ---
 
 ## 9. 動画生成
@@ -358,7 +370,7 @@ slide.003.png <-> 003.wav
 
 中間成果物はOSの一時領域に実行ごとに作成する専用ディレクトリに置き、スライド画像、音声、動画化に使う作業ファイルを分けて管理する。通常はビルド終了時に削除する。`--keep-intermediates` を指定した場合は保存し、保存先をログに表示する。
 
-最終MP4は出力先と同じディレクトリの一時ファイルへ生成し、完成後に出力先へ配置する。失敗時に不完全な動画を最終出力として残さない。
+最終MP4は出力先と同じディレクトリの一時ファイルへ生成し、完成後にタイムスタンプ付きの出力先へ配置する。失敗時に不完全な動画を最終出力として残さない。既存の動画は上書きしない。
 
 ---
 
@@ -468,10 +480,11 @@ presentation/
 ├── script.md
 ├── assets/
 └── build/
-    └── video.mp4
+    ├── video-20260929T123456789.mp4
+    └── video-20260929T130000123.mp4
 ```
 
-`build/` 以下は生成物とする。スライド画像と音声は通常、一時ディレクトリに生成するため `build/` 以下には残さない。
+`build/` 以下は生成物とする。スライド画像と音声は通常、一時ディレクトリに生成するため `build/` 以下には残さない。過去の動画は比較できるよう保持する。
 
 ---
 
@@ -510,17 +523,19 @@ VOICEVOX専用の台本言語は定義しない。
 
 ### 15.1 実装言語と外部ツール
 
-本ツールはTypeScriptで実装し、Node.js上で実行する。Marp CLI、Pandoc、FFmpeg、FFprobeを外部ツールとして呼び出し、VOICEVOX ENGINEとはHTTP APIで通信する。Marp CLIはプロジェクトの依存関係としてバージョンを固定する。
+本ツールはTypeScriptで実装し、Node.js上で実行する。Marp CLI、Pandoc、FFmpeg、FFprobeを外部ツールとして呼び出し、VOICEVOX ENGINEとはHTTP APIで通信する。Marp CLIはプロジェクトの依存関係としてバージョンを固定する。Marp CLIによるPNG生成には、対応するブラウザーを実行環境に用意する。
 
 ### 15.2 CLI
 
 初期版は `build` コマンドを提供する。
 
 ```text
-marp-video build slides.md script.md [--output build/video.mp4] [--voicevox-url http://127.0.0.1:50021] [--gap-ms 300] [--tail-ms 500] [--keep-intermediates] [--verbose]
+marp-video build slides.md script.md [--output build/video.mp4] [--voicevox-url http://127.0.0.1:50021] [--gap-ms 300] [--tail-ms 500] [--allow-local-files] [--keep-intermediates] [--verbose]
 ```
 
-入力ファイルはスライド、台本の順に指定する。`--output`、`--voicevox-url`、`--gap-ms`、`--tail-ms` は省略でき、上記の値を既定値とする。`--keep-intermediates` と `--verbose` は指定時のみ有効とする。
+入力ファイルはスライド、台本の順に指定する。`--output` はタイムスタンプを付ける前のMP4ファイル名として扱い、省略時は `slides.md` のディレクトリにある `build/video.mp4` を基準名とする。明示した `--output` の相対パスはCLI実行時の作業ディレクトリから解決する。`--voicevox-url`、`--gap-ms`、`--tail-ms` は省略でき、上記の値を既定値とする。`--allow-local-files`、`--keep-intermediates`、`--verbose` は指定時のみ有効とする。
+
+出力ファイル名は基準名の `.mp4` の直前に、実行環境のローカル時刻を `-YYYYMMDDTHHMMSSmmm` の形式で挿入する。タイムゾーンはファイル名に含めない。例えば `--output result.mp4` は `result-20260929T123456789.mp4` となる。同名のファイルが既にある場合は末尾に連番を追加し、既存ファイルを上書きしない。
 
 VOICEVOXの `speaker` や話速などの読み上げ設定は `script.md` に記述し、CLIからは変更しない。初期版では本ツール独自の設定ファイルを設けない。Marp CLIなどの外部ツール固有の設定は、それぞれのツールの仕組みに従う。
 
@@ -541,4 +556,4 @@ VOICEVOXの `speaker` や話速などの読み上げ設定は `script.md` に記
 5. 各台本ページをVOICEVOXでWAVへ変換する。
 6. 各WAVの長さ、スライド間・末尾の余白時間、フレームレートに基づいてスライドの表示時間を決定する。
 7. FFmpegを用いて映像と音声を結合し、指定された形式でエンコードする。
-8. 最終的な動画ファイルを出力する。
+8. 最終的な動画ファイルをタイムスタンプ付きの名前で出力する。
