@@ -31,4 +31,4 @@ case "$runtime" in
 esac
 
 printf 'Starting VOICEVOX with %s at http://127.0.0.1:50021\n' "$runtime" >&2
-exec "$runtime" run --rm -p '127.0.0.1:50021:50021' voicevox/voicevox_engine:cpu-latest
+exec "$runtime" run --rm -p '127.0.0.1:50021:50021' docker.io/voicevox/voicevox_engine:cpu-latest
